@@ -174,7 +174,7 @@ class ScaleBar(Artist):
         self,
         dx,
         units="m",
-        dimension="si-length",
+        dimension="auto",
         label=None,
         length_fraction=None,
         height_fraction=None,
@@ -230,6 +230,7 @@ class ScaleBar(Artist):
                 * ``:const:`pixel-length```: scale bar showing px, kpx, Mpx, etc.
                 * ``:const:`angle```: scale bar showing \u00b0, \u2032 or \u2032\u2032.
                 * a :class:`matplotlib_scalebar.dimension._Dimension` object
+                * ``:const:`auto``` (the default): autodetect dimension based on *units*
         :type dimension: :class:`str` or
             :class:`matplotlib_scalebar.dimension._Dimension`
 
@@ -355,7 +356,14 @@ class ScaleBar(Artist):
             raise ValueError("loc and location are specified and not equal")
 
         self.dx = dx
-        self.dimension = dimension  # Should be initialize before units
+        if dimension == "auto":
+            for cls in _DIMENSION_LOOKUP.values():
+                dimension = cls()
+                if dimension.is_valid_units(units):
+                    break
+            else:
+                raise ValueError(f"Invalid unit ({units})")
+        self.dimension = dimension  # Should be initialized before units
         self.units = units
         self.label = label
         self.length_fraction = length_fraction

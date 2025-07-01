@@ -398,3 +398,8 @@ def test_info():
 
     plt.close()
     del fig
+
+
+def test_auto_dimension():
+    assert ScaleBar(1, "kpc").dimension.base_units == "pc"
+    assert ScaleBar(1, "1/um").dimension.base_units == "1/m"
