@@ -47,7 +47,7 @@ def test_mpl_rcParams_update():
 
     params = {
         "scalebar.length_fraction": 0.2,
-        "scalebar.width_fraction": 0.01,
+        "scalebar.thickness": (0.01, "saxis"),
         "scalebar.location": "upper right",
         "scalebar.pad": 0.2,
         "scalebar.border_pad": 0.1,
@@ -123,6 +123,45 @@ def test_scalebar_height_fraction(scalebar):
 
     with pytest.raises(ValueError), pytest.deprecated_call():
         scalebar.set_height_fraction(1.1)
+
+
+def test_scalebar_thickness_width_fraction(scalebar):
+    assert scalebar.get_thickness() is None
+    assert scalebar.thickness is None
+    assert scalebar.get_width_fraction() is None
+    assert scalebar.width_fraction is None
+
+    scalebar.set_width_fraction(0.2)
+    assert scalebar.get_width_fraction() == pytest.approx(0.2, abs=1e-2)
+    assert scalebar.width_fraction == pytest.approx(0.2, abs=1e-2)
+    assert scalebar.get_thickness() == (0.2, "saxis")
+    assert scalebar.thickness == (0.2, "saxis")
+
+    scalebar.thickness = (0.4, "saxis")
+    assert scalebar.get_width_fraction() == pytest.approx(0.4, abs=1e-2)
+    assert scalebar.width_fraction == pytest.approx(0.4, abs=1e-2)
+    assert scalebar.get_thickness() == (0.4, "saxis")
+    assert scalebar.thickness == (0.4, "saxis")
+
+    scalebar.width_fraction = 0.1
+    assert scalebar.get_width_fraction() == pytest.approx(0.1, abs=1e-2)
+    assert scalebar.width_fraction == pytest.approx(0.1, abs=1e-2)
+    assert scalebar.get_thickness() == (0.1, "saxis")
+    assert scalebar.thickness == (0.1, "saxis")
+
+    scalebar.set_thickness((0.3, "font"))
+    with pytest.raises(ValueError):
+        scalebar.get_width_fraction()
+    with pytest.raises(ValueError):
+        scalebar.width_fraction
+    assert scalebar.get_thickness() == (0.3, "font")
+    assert scalebar.thickness == (0.3, "font")
+
+    with pytest.raises(ValueError):
+        scalebar.set_width_fraction(0.0)
+
+    with pytest.raises(ValueError):
+        scalebar.set_width_fraction(1.1)
 
 
 def test_scalebar_location(scalebar):

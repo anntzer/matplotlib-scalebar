@@ -148,6 +148,7 @@ scalebar = ScaleBar(
         dimension="si-length",
         label=None,
         length_fraction=None,
+        thickness=None,
         height_fraction=None,
         width_fraction=None,
         location=None,
@@ -253,13 +254,20 @@ In the example below, the scale bar for a *length_fraction* of 0.25 and 0.5 is t
 
 ![length fraction](doc/argument_length_fraction.png)
 
+### thickness
+
+Width and unit of the scale bar (valid units: "saxis", i.e. relative to the short axis size;
+"laxis", i.e. relative to the long axis size; "font", i.e. relative to the font size).
+Default: `None`, value from matplotlibrc or `(0.01, "saxis")`.
+
 ### height_fraction
 
-**Deprecated**, use *width_fraction*.
+**Deprecated**, use *thickness* or *width_fraction*.
 
 ### width_fraction
 
 Width of the scale bar as a fraction of the subplot's height.
+*thickness* is a more general way to set this parameter.
 Default: `None`, value from matplotlibrc or `0.01`.
 
 ### location

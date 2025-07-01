@@ -12,7 +12,7 @@ Example::
 
 The following parameters are available for customization in the matplotlibrc:
     - scalebar.length_fraction
-    - scalebar.height_fraction
+    - scalebar.thickness
     - scalebar.location
     - scalebar.pad
     - scalebar.border_pad
@@ -39,8 +39,9 @@ __all__ = [
 
 # Standard library modules.
 import bisect
-import warnings
 import dataclasses
+import numbers
+import warnings
 
 # Third party modules.
 import matplotlib
@@ -61,6 +62,11 @@ from matplotlib.offsetbox import (
     AnchoredOffsetbox,
 )
 from matplotlib.patches import Rectangle
+from matplotlib.transforms import (
+    Affine2D,
+    IdentityTransform,
+    blended_transform_factory,
+)
 
 # Local modules.
 from matplotlib_scalebar.dimension import (
@@ -96,10 +102,19 @@ def _validate_legend_loc(loc):
     return loc
 
 
+def _validate_dim(dim):
+    if (len(dim) == 2
+            and isinstance(dim[0], numbers.Real)
+            and dim[1] in ["saxis", "laxis", "lw", "font", "pt"]):
+        return dim
+    else:
+        raise ValueError("Not a valid dimension")
+
+
 defaultParams.update(
     {
         "scalebar.length_fraction": [0.2, validate_float],
-        "scalebar.width_fraction": [0.01, validate_float],
+        "scalebar.thickness": [(0.01, "saxis"), _validate_dim],
         "scalebar.location": ["upper right", _validate_legend_loc],
         "scalebar.pad": [0.2, validate_float],
         "scalebar.border_pad": [0.1, validate_float],
@@ -177,6 +192,7 @@ class ScaleBar(Artist):
         dimension="si-length",
         label=None,
         length_fraction=None,
+        thickness=None,
         height_fraction=None,
         width_fraction=None,
         location=None,
@@ -242,9 +258,17 @@ class ScaleBar(Artist):
             This argument is ignored if a *fixed_value* is specified.
         :type length_fraction: :class:`float`
 
-        :arg width_fraction: width of the scale bar as a fraction of the
-            axes's height (default: rcParams['scalebar.width_fraction'] or ``0.01``)
-        :type width_fraction: :class:`float`
+        :arg thickness: thickness of the scale bar, as a ``(value, unit)`` pair.
+            Valid units are
+                * "laxis": value is relative to the size of the parent axes in the
+                  "long" direction.
+                * "saxis": value is relative to the size of the parent axes in the
+                  "short" direction.
+                * "font": value is relative to the label fontsize.
+                * "lw": value is relative to ``rcParams["lines.linewidth"]``.
+                * "pt": value is in points.
+            (default: rcParams['scalebar.thickness'] or ``(0.01, "saxis")``)
+        :type thickness: ``tuple[float, str]``
 
         :arg location: a location code (same as legend)
             (default: rcParams['scalebar.location'] or ``upper right``)
@@ -347,6 +371,12 @@ class ScaleBar(Artist):
             )
             scale_formatter = scale_formatter or label_formatter
 
+        if width_fraction is not None:
+            if thickness is not None:
+                warnings.warn("Ignoring 'width_fraction', as 'thickness' is also set")
+            else:
+                thickness = (width_fraction, "saxis")
+
         if (
             loc is not None
             and location is not None
@@ -359,7 +389,7 @@ class ScaleBar(Artist):
         self.units = units
         self.label = label
         self.length_fraction = length_fraction
-        self.width_fraction = width_fraction
+        self.thickness = thickness
         self.location = location or loc
         self.pad = pad
         self.border_pad = border_pad
@@ -433,7 +463,7 @@ class ScaleBar(Artist):
             return value
 
         length_fraction = _get_value("length_fraction", 0.2)
-        width_fraction = _get_value("width_fraction", 0.01)
+        thickness_value, thickness_unit = _get_value("thickness", (0.01, "saxis"))
         location = _get_value("location", "upper right")
         if isinstance(location, str):
             location = self._LOCATIONS[location.lower()]
@@ -486,14 +516,38 @@ class ScaleBar(Artist):
 
         scale_text = self.scale_formatter(value, self.dimension.to_latex(units))
 
-        width_px = abs(ylim[1] - ylim[0]) * width_fraction
+        axis_order = slice(None) if rotation == "horizontal" else slice(None, None, -1)
+        if thickness_unit == "saxis":
+            thickness = thickness_value
+            transform = (ax.get_xaxis_transform()
+                         if rotation == "horizontal" else
+                         ax.get_yaxis_transform())
+        elif thickness_unit == "laxis":
+            thickness = thickness_value
+            flip = Affine2D([[0, 1, 0], [1, 0, 0], [0, 0, 1]])
+            transform = (
+                flip
+                + blended_transform_factory(
+                    *(ax.transAxes, IdentityTransform())[axis_order])
+                + flip
+                + blended_transform_factory(
+                    *(ax.transData, IdentityTransform())[axis_order])
+            )
+        elif thickness_unit in {"font", "lw", "pt"}:
+            thickness = thickness_value * {
+                "font": font_properties.get_size(),
+                "lw": matplotlib.rcParams["lines.linewidth"],
+                "pt": 1,
+            }[thickness_unit] / 72
+            transform = blended_transform_factory(
+                *(ax.transData, ax.figure.dpi_scale_trans)[axis_order])
 
         # Create scale bar
         if rotation == "horizontal":
             scale_rect = Rectangle(
                 (0, 0),
                 length_px,
-                width_px,
+                thickness,
                 fill=True,
                 facecolor=color,
                 edgecolor="none",
@@ -501,14 +555,14 @@ class ScaleBar(Artist):
         else:
             scale_rect = Rectangle(
                 (0, 0),
-                width_px,
+                thickness,
                 length_px,
                 fill=True,
                 facecolor=color,
                 edgecolor="none",
             )
 
-        scale_bar_box = AuxTransformBox(ax.transData)
+        scale_bar_box = AuxTransformBox(transform)
         scale_bar_box.add_artist(scale_rect)
 
         # Create scale text
@@ -627,22 +681,37 @@ class ScaleBar(Artist):
 
     length_fraction = property(get_length_fraction, set_length_fraction)
 
+    def get_thickness(self):
+        return self._thickness
+
+    def set_thickness(self, thickness):
+        if thickness is not None:
+            _validate_dim(thickness)
+        self._thickness = thickness
+
+    thickness = property(get_thickness, set_thickness)
+
     def get_width_fraction(self):
-        return self._width_fraction
+        if self._thickness is None:
+            return None
+        elif self._thickness[1] == "saxis":
+            return self._thickness[0]
+        else:
+            raise ValueError(f"thickness ({self._thickness}) is not a width fraction")
 
     def set_width_fraction(self, fraction):
         if fraction is not None:
             fraction = float(fraction)
             if fraction <= 0.0 or fraction > 1.0:
                 raise ValueError("Width fraction must be between [0.0, 1.0]")
-        self._width_fraction = fraction
+        self._thickness = (fraction, "saxis")
 
     width_fraction = property(get_width_fraction, set_width_fraction)
 
     def get_height_fraction(self):
         warnings.warn(
             "The get_height_fraction method is deprecated. "
-            "Use get_width_fraction instead.",
+            "Use get_thickness instead.",
             DeprecationWarning,
         )
         return self.width_fraction
@@ -650,7 +719,7 @@ class ScaleBar(Artist):
     def set_height_fraction(self, fraction):
         warnings.warn(
             "The set_height_fraction method is deprecated. "
-            "Use set_width_fraction instead.",
+            "Use set_thickness instead.",
             DeprecationWarning,
         )
         self.width_fraction = fraction
